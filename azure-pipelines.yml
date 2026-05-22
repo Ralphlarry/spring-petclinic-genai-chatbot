@@ -1,0 +1,102 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  ACR_NAME: 'dmiregistry'
+  AKS_CLUSTER: 'dmi-aks'
+  AKS_RG: 'rg-dmi-cohort2'
+  NAMESPACE: 'petclinic'
+  CHATBOT_SERVICE: 'chatbot-service'
+
+stages:
+
+  - stage: Build
+    displayName: '1 — Build and Push'
+    jobs:
+      - job: MavenBuild
+        steps:
+          - task: Maven@3
+            displayName: 'mvn clean package'
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'clean package -DskipTests'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: '1.17'
+              publishJUnitResults: false
+
+          - task: Docker@2
+            displayName: 'Build and push chatbot-service image'
+            inputs:
+              containerRegistry: 'acr-service-connection'
+              repository: '$(CHATBOT_SERVICE)'
+              command: 'buildAndPush'
+              Dockerfile: '$(CHATBOT_SERVICE)/Dockerfile'
+              buildContext: '$(CHATBOT_SERVICE)'
+              tags: |
+                $(Build.BuildNumber)
+                latest
+
+  - stage: Test
+    displayName: '2 — Unit Tests'
+    dependsOn: Build
+    jobs:
+      - job: Test
+        steps:
+          - task: Maven@3
+            displayName: 'Run unit tests'
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'test'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: '1.17'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+
+  - stage: Deploy
+    displayName: '3 — Deploy to AKS'
+    dependsOn: Test
+    condition: succeeded('Test')
+    jobs:
+      - deployment: DeployAKS
+        environment: aks-petclinic
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: 'Get AKS credentials'
+                  inputs:
+                    azureSubscription: 'azure-service-connection'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(AKS_RG) \
+                        --name $(AKS_CLUSTER) \
+                        --overwrite-existing
+
+                - task: HelmDeploy@0
+                  displayName: 'Helm upgrade petclinic'
+                  inputs:
+                    connectionType: None
+                    namespace: $(NAMESPACE)
+                    command: upgrade
+                    chartType: FilePath
+                    chartPath: './helm/petclinic'
+                    releaseName: petclinic
+                    overrideValues: |
+                      chatbot.image.repository=$(ACR_NAME).azurecr.io/$(CHATBOT_SERVICE)
+                      chatbot.image.tag=$(Build.BuildNumber)
+                    install: true
+                    waitForExecution: true
+
+                - script: |
+                    kubectl rollout status deployment/$(CHATBOT_SERVICE) \
+                      -n $(NAMESPACE) --timeout=5m
+                    kubectl get pods -n $(NAMESPACE)
+                  displayName: 'Verify rollout'
