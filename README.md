@@ -4,7 +4,7 @@
 
 Integrated a production-grade GenAI chatbot into the Spring PetClinic microservices application as part of DMI Cohort 2. The chatbot uses Spring AI with Azure OpenAI (GPT-4o-mini) for conversation and text-embedding-ada-002 for semantic vector search over veterinary data. Deployed on Azure Kubernetes Service (AKS) via Helm and Azure Pipelines.
 
-**Live deployment:** https://lnkd.in/drZczvfg
+**Live deployment:** http://lnkd.in/drZczvfg
 
 ---
 
