@@ -30,5 +30,3 @@ The chatbot returned real owner data from `customers-service` through function c
 ## The rest of the project
 
 Other members of Group 9 built the Terraform infrastructure, the Helm chart, the Azure Pipeline and the monitoring. All of it is in the group's repo.
-
-The `azure-pipelines.yml` in this repo isn't the pipeline that ran. The real one is in the group's repo.
